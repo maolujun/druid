@@ -17,6 +17,10 @@ package com.alibaba.druid.spring.boot.autoconfigure.stat;
 
 import com.alibaba.druid.spring.boot.autoconfigure.properties.DruidStatProperties;
 import com.alibaba.druid.support.http.StatViewServlet;
+import com.alibaba.fastjson.JSONObject;
+
+import java.util.Map;
+
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
@@ -49,6 +53,25 @@ public class DruidStatViewServletConfiguration {
         if (config.getResetEnable() != null) {
             registrationBean.addInitParameter("resetEnable", config.getResetEnable());
         }
+        if(config.getJmxUrl() != null) {
+        	registrationBean.addInitParameter("jmxUrl", config.getJmxUrl());
+        }
+        if(config.getJmxUsername() != null) {
+        	registrationBean.addInitParameter("jmxUsername", config.getJmxUsername());
+        }
+        if(config.getJmxPassword() != null) {
+        	registrationBean.addInitParameter("jmxPassword", config.getJmxPassword());
+        }
+        if(config.getJmxUrls() != null) {
+        	registrationBean.addInitParameter("jmxUrls", JSONObject.toJSONString(config.getJmxUrls()));
+        }
+        if(config.getJmxPasswords() != null) {
+        	registrationBean.addInitParameter("jmxPasswords", JSONObject.toJSONString(config.getJmxPasswords()));
+        }
+        if(config.getJmxUsernames() != null) {
+        	registrationBean.addInitParameter("jmxUsernames", JSONObject.toJSONString(config.getJmxUsernames()));
+        }
+        
         return registrationBean;
     }
 }

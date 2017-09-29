@@ -15,6 +15,8 @@
  */
 package com.alibaba.druid.spring.boot.autoconfigure.properties;
 
+import java.util.Map;
+
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
@@ -62,6 +64,12 @@ public class DruidStatProperties {
         private String loginUsername;
         private String loginPassword;
         private String resetEnable;
+        private String jmxUrl;
+        private String jmxUsername;
+        private String jmxPassword;
+        private Map<String,String> jmxUrls;
+        private Map<String,String> jmxUsernames;
+        private Map<String,String> jmxPasswords;
 
         public boolean isEnabled() {
             return enabled;
@@ -118,6 +126,55 @@ public class DruidStatProperties {
         public void setResetEnable(String resetEnable) {
             this.resetEnable = resetEnable;
         }
+
+		public String getJmxUrl() {
+			return jmxUrl;
+		}
+
+		public void setJmxUrl(String jmxUrl) {
+			this.jmxUrl = jmxUrl;
+		}
+
+		public String getJmxUsername() {
+			return jmxUsername;
+		}
+
+		public void setJmxUsername(String jmxUsername) {
+			this.jmxUsername = jmxUsername;
+		}
+
+		public String getJmxPassword() {
+			return jmxPassword;
+		}
+
+		public void setJmxPassword(String jmxPassword) {
+			this.jmxPassword = jmxPassword;
+		}
+
+		public Map<String, String> getJmxUrls() {
+			return jmxUrls;
+		}
+
+		public void setJmxUrls(Map<String, String> jmxUrls) {
+			this.jmxUrls = jmxUrls;
+		}
+
+		public Map<String, String> getJmxUsernames() {
+			return jmxUsernames;
+		}
+
+		public void setJmxUsernames(Map<String, String> jmxUsernames) {
+			this.jmxUsernames = jmxUsernames;
+		}
+
+		public Map<String, String> getJmxPasswords() {
+			return jmxPasswords;
+		}
+
+		public void setJmxPasswords(Map<String, String> jmxPasswords) {
+			this.jmxPasswords = jmxPasswords;
+		}
+        
     }
 
     public static class WebStatFilter {
