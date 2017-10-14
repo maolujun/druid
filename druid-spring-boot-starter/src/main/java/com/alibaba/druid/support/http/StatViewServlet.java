@@ -2,6 +2,7 @@ package com.alibaba.druid.support.http;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,8 @@ import org.springframework.util.StringUtils;
 import com.alibaba.druid.stat.DruidStatService;
 import com.alibaba.druid.support.logging.Log;
 import com.alibaba.druid.support.logging.LogFactory;
+import com.alibaba.druid.util.MapComparator;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 public class StatViewServlet extends ResourceServlet{
@@ -54,6 +57,16 @@ public class StatViewServlet extends ResourceServlet{
     private Map<String,String> nameMap                    = null;
     private Map<String,String> passwordMap                = null;
     
+    public final static int               RESULT_CODE_SUCCESS    = 1;
+    public final static int               RESULT_CODE_ERROR      = -1;
+
+    private final static int              DEFAULT_PAGE           = 1;
+    private final static int              DEFAULT_PER_PAGE_COUNT = Integer.MAX_VALUE;
+    private static final String           ORDER_TYPE_DESC        = "desc";
+    private static final String           ORDER_TYPE_ASC         = "asc";
+    private static final String           DEFAULT_ORDER_TYPE     = ORDER_TYPE_ASC;
+    private static final String           DEFAULT_ORDERBY        = "SQL";
+
     
     public void init() throws ServletException {
         super.init();
@@ -83,6 +96,9 @@ public class StatViewServlet extends ResourceServlet{
     	String paramJmxPassword = readInitParam(PARAM_NAME_JMX_PASSWORD);
         //把配置的单个连接放进MAp中
     	if(paramJmxUrl != null) {
+    		if(urlMap == null)	urlMap = new HashMap<String,String>();
+    		if(nameMap == null) nameMap = new HashMap<String,String>();
+    		if(passwordMap == null) passwordMap = new HashMap<String,String>();
     		urlMap.put(PARAM_NAME_ONE_JMX_KEY, paramJmxUrl);
     		nameMap.put(PARAM_NAME_ONE_JMX_KEY, paramJmxUsername);
     		passwordMap.put(PARAM_NAME_ONE_JMX_KEY, paramJmxPassword);
@@ -158,21 +174,7 @@ public class StatViewServlet extends ResourceServlet{
     	jmxUrl = urlMap.get(key);
     	jmxUsername = nameMap.get(key);
     	jmxPassword = passwordMap.get(key);
-    	if(jmxUrl != null) {
-    		JMXServiceURL url = new JMXServiceURL(jmxUrl);
-            Map<String, String[]> env = null;
-            if (jmxUsername != null) {
-                env = new HashMap<String, String[]>();
-                String[] credentials = new String[] { jmxUsername, jmxPassword };
-                env.put(JMXConnector.CREDENTIALS, credentials);
-            }
-            JMXConnector jmxc = JMXConnectorFactory.connect(url, env);
-            conn = jmxc.getMBeanServerConnection();
-            if(connMap == null) {
-            	connMap = new HashMap<String, MBeanServerConnection>();
-            }
-            connMap.put(jmxUrl, conn);
-    	}
+    	initJmxConn();
     }
     
     /**
@@ -184,12 +186,12 @@ public class StatViewServlet extends ResourceServlet{
      * @throws Exception the exception
      */
     private String getJmxResult(MBeanServerConnection connetion, String url) throws Exception {
-        ObjectName name = new ObjectName(DruidStatService.MBEAN_NAME);
+    	ObjectName name = new ObjectName(DruidStatService.MBEAN_NAME);
         String result = (String) conn.invoke(name, "service", new String[] { url }, new String[] { String.class.getName() });
         return result;
     }
     
-    String errorResp = null;
+    String  singleResp = null;
     /**
      * 程序首先判断是否存在jmx连接地址，如果不存在，则直接调用本地的duird服务； 如果存在，则调用远程jmx服务。在进行jmx通信，首先判断一下jmx连接是否已经建立成功，如果已经
      * 建立成功，则直接进行通信，如果之前没有成功建立，则会尝试重新建立一遍。.
@@ -202,7 +204,7 @@ public class StatViewServlet extends ResourceServlet{
     	if(jmxUrl == null && urlMap == null) {
     		resp = statService.service(url);
     	}else if(urlMap != null) {
-    		List<String> list = new ArrayList<String>();
+    		List<Map<String , Object>> list = new ArrayList<Map<String , Object>>();
     		urlMap.forEach((key,jmxurl)->{ 
     			String respStr = null;
     			if(jmxurl != null) {
@@ -212,7 +214,7 @@ public class StatViewServlet extends ResourceServlet{
                             initJmxConn(key);
                         } catch (IOException e) {
                             LOG.error("init jmx connection error", e);
-                            errorResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "init jmx connection error" + e.getMessage());
+                            singleResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "init jmx connection error" + e.getMessage());
                         }
                         if (conn != null) {// 连接成功
                             try {
@@ -220,7 +222,7 @@ public class StatViewServlet extends ResourceServlet{
 //                            	LOG.info("jmxUrl:"+ key + ";respStr:"+respStr);
                             } catch (Exception e) {
                                 LOG.error("get jmx data error", e);
-                                errorResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "get data error:" + e.getMessage());
+                                singleResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "get data error:" + e.getMessage());
                             }
                         }
                     } else {// 连接成功
@@ -233,48 +235,99 @@ public class StatViewServlet extends ResourceServlet{
                         		connMap.put(jmxurl, null);
                         	}
                             LOG.error("get jmx data error", e);
-                            errorResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "get data error" + e.getMessage());
+                            singleResp = DruidStatService.returnJSONResult(DruidStatService.RESULT_CODE_ERROR, "get data error" + e.getMessage());
                         }
                     }
     				
     				if(respStr != null) {
-	            		if(url.startsWith("/sql.json")) {
+	            		if(url.startsWith("/sql.json") || url.startsWith("/weburi.json")) {
 	                		Map<String , Object> map = JSONObject.parseObject(respStr, Map.class);
 	                		if(map.get("Content") != null) {
-	                			List sublist = (List) map.get("Content");
-	                    		list.addAll(sublist);
+	                			String jsonString = JSONObject.toJSONString(map.get("Content")) ;
+	                			JSONArray arr = JSONObject.parseArray(jsonString);
+	                			for(Object o :  arr) {
+	                				Map<String , Object> mapContent = JSONObject.parseObject( JSONObject.toJSONString(o), Map.class);
+		                    		list.add(mapContent);
+	                			}
 	                		}
-	            		}else if(url.startsWith("/sql-")){
-	            			JSONObject object = JSONObject.parseObject(respStr);
-	            			String content = object.getString("Content");
-	            			if(content != null) list.add(content);
-	            		}else {
-	            			JSONObject object = JSONObject.parseObject(respStr);
-	            			String content = object.getString("Content");
-	            			list.add(content);
+	            		} else if(url.startsWith("/sql-") || url.startsWith("/weburi-")) {
+	            			Map<String , Object> map = JSONObject.parseObject(respStr, Map.class);
+	                		if(map.get("Content") != null) {
+	                			String jsonString = JSONObject.toJSONString(map.get("Content")) ;
+	                			Map<String , Object> mapContent = JSONObject.parseObject( jsonString, Map.class);
+		                    	list.add(mapContent);
+	                		}
+	            		} else {
+	            			singleResp = respStr;
 	            		}
     				}
     			}
     		});
     		
-    		if(list.size() >0) {
-    			if(url.startsWith("/sql.json")) {
-        			resp = "{\"ResultCode\":1,\"Content\":"+ list.toString() +"}";
-            		LOG.info("returnString:"+resp);
-        		}else if(url.startsWith("/sql-")){
-        			resp = "{\"ResultCode\":1,\"Content\":"+ list.get(0) +"}";
-            		LOG.info("returnString:"+resp);
-        		}else {
-        			resp = "{\"ResultCode\":1,\"Content\":"+ list.get(0) +"}";
-            		LOG.info("returnString:"+resp);
-        		}	
+			if(url.startsWith("/sql.json") || url.startsWith("/weburi.json")) {
+				List<Map<String, Object>> sortedArray = comparatorOrderBy(list, DruidStatService.getParameters(url));
+				resp = DruidStatService.returnJSONResult( DruidStatService.RESULT_CODE_SUCCESS,sortedArray);
+//        		LOG.info("returnString:"+resp);
+    		}else if(url.startsWith("/sql-") || url.startsWith("/weburi-")) {
+    			resp = DruidStatService.returnJSONResult( DruidStatService.RESULT_CODE_SUCCESS,list.get(0));
+    		}else {
+    			resp = singleResp;
     		}
-    			
-        	if(StringUtils.isEmpty(list.isEmpty())) {
-        		resp = errorResp;
-        	}
+
     	}
     	return resp;
     }
+    
+    private List<Map<String, Object>> comparatorOrderBy(List<Map<String, Object>> array, Map<String, String> parameters) {
+        // when open the stat page before executing some sql
+        if (array == null || array.isEmpty()) {
+            return null;
+        }
+
+        // when parameters is null
+        String orderBy, orderType = null;
+        Integer page = DEFAULT_PAGE;
+        Integer perPageCount = DEFAULT_PER_PAGE_COUNT;
+        if (parameters == null) {
+            orderBy = DEFAULT_ORDERBY;
+            orderType = DEFAULT_ORDER_TYPE;
+            page = DEFAULT_PAGE;
+            perPageCount = DEFAULT_PER_PAGE_COUNT;
+        } else {
+            orderBy = parameters.get("orderBy");
+            orderType = parameters.get("orderType");
+            String pageParam = parameters.get("page");
+            if (pageParam != null && pageParam.length() != 0) {
+                page = Integer.parseInt(pageParam);
+            }
+            String pageCountParam = parameters.get("perPageCount");
+            if (pageCountParam != null && pageCountParam.length() > 0) {
+                perPageCount = Integer.parseInt(pageCountParam);
+            }
+        }
+
+        // others,such as order
+        orderBy = orderBy == null ? DEFAULT_ORDERBY : orderBy;
+        orderType = orderType == null ? DEFAULT_ORDER_TYPE : orderType;
+
+        if (! ORDER_TYPE_DESC.equals(orderType)) {
+            orderType = ORDER_TYPE_ASC;
+        }
+
+        // orderby the statData array
+        if (orderBy.trim().length() != 0) {
+            Collections.sort(array, new MapComparator<String, Object>(orderBy, ORDER_TYPE_DESC.equals(orderType)));
+        }
+
+        // page
+        int fromIndex = (page - 1) * perPageCount;
+        int toIndex = page * perPageCount;
+        if (toIndex > array.size()) {
+            toIndex = array.size();
+        }
+
+        return array.subList(fromIndex, toIndex);
+    }
+    
     
 }
