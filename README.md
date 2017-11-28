@@ -9,7 +9,7 @@
 Introduction
 ---
 
-- git clone https://github.com/alibaba/druid.git
+- git clone https://github.com/maolujun/druid.git
 - cd druid && mvn install
 - have fun.
 
